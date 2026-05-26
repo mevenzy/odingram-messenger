@@ -1,6 +1,6 @@
 package mevenzy.client;
 
-import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.themes.FlatMacDarkLaf;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -35,10 +35,17 @@ public class ChatClientFrame extends JFrame {
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
-    private String nickname;
 
-    public ChatClientFrame() {
-        setTitle("Odingram Messenger");
+    private final String serverAddress;
+    private final int port;
+    private final String nickname;
+
+    public ChatClientFrame(String serverAddress, int port, String nickname) {
+        this.serverAddress = serverAddress;
+        this.port = port;
+        this.nickname = nickname;
+
+        setTitle("Odingram Messenger — " + nickname);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(750, 600);
         setLocationRelativeTo(null);
@@ -48,7 +55,8 @@ public class ChatClientFrame extends JFrame {
         UIManager.put("ScrollBar.thumbInsets", new Insets(2, 2, 2, 2));
 
         initUI();
-        SwingUtilities.invokeLater(this::startConnectionWorkflow);
+
+        new Thread(this::startConnectionWorkflow).start();
     }
 
     private void initUI() {
@@ -162,45 +170,31 @@ public class ChatClientFrame extends JFrame {
     }
 
     private void startConnectionWorkflow() {
-        String serverAddress = JOptionPane.showInputDialog(this, "Введите адрес сервера (IP/Домен):", "Подключение", JOptionPane.QUESTION_MESSAGE);
-        if (serverAddress == null || serverAddress.trim().isEmpty()) System.exit(0);
+        try {
+            socket = new Socket(serverAddress, port);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
 
-        String portStr = JOptionPane.showInputDialog(this, "Введите порт:", "Подключение", JOptionPane.QUESTION_MESSAGE);
-        if (portStr == null || portStr.trim().isEmpty()) System.exit(0);
-        int port = Integer.parseInt(portStr.trim());
+            out.println(nickname);
+            String serverResponse = in.readLine();
 
-        while (true) {
-            nickname = JOptionPane.showInputDialog(this, "Введите ник:", "Авторизация", JOptionPane.QUESTION_MESSAGE);
-            if (nickname == null || nickname.trim().isEmpty()) System.exit(0);
-            nickname = nickname.trim();
-
-            try {
-                socket = new Socket(serverAddress, port);
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                out = new PrintWriter(socket.getOutputStream(), true);
-
-                out.println(nickname);
-                String serverResponse = in.readLine();
-
-                if (serverResponse != null && serverResponse.startsWith("ERROR")) {
-                    JOptionPane.showMessageDialog(this, serverResponse.substring(6), "Ошибка", JOptionPane.ERROR_MESSAGE);
-                    socket.close();
-                } else if (serverResponse != null && serverResponse.equals("OK")) {
-                    break;
-                } else {
-                    JOptionPane.showMessageDialog(this, "Неизвестный ответ сервера.", "Ошибка", JOptionPane.ERROR_MESSAGE);
-                    socket.close();
-                    System.exit(0);
-                }
-            } catch (IOException e) {
-                JOptionPane.showMessageDialog(this, "Ошибка сети: " + e.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+            if (serverResponse != null && serverResponse.startsWith("ERROR")) {
+                JOptionPane.showMessageDialog(this, serverResponse.substring(6), "Ошибка авторизации", JOptionPane.ERROR_MESSAGE);
+                socket.close();
+                System.exit(0);
+            } else if (serverResponse != null && serverResponse.equals("OK")) {
+                setStatusConnected(serverAddress + ":" + port);
+                new Thread(this::listenToServer).start();
+                new Thread(this::startOnlineUsersUpdater).start();
+            } else {
+                JOptionPane.showMessageDialog(this, "Неизвестный ответ сервера.", "Ошибка", JOptionPane.ERROR_MESSAGE);
+                socket.close();
                 System.exit(0);
             }
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Не удалось подключиться к серверу:\n" + e.getMessage(), "Ошибка сети", JOptionPane.ERROR_MESSAGE);
+            System.exit(0);
         }
-
-        setStatusConnected(serverAddress + ":" + port);
-        new Thread(this::listenToServer).start();
-        new Thread(this::startOnlineUsersUpdater).start();
     }
 
     private void listenToServer() {
@@ -208,8 +202,6 @@ public class ChatClientFrame extends JFrame {
             String serverMessage;
             while ((serverMessage = in.readLine()) != null) {
                 if (serverMessage.startsWith("RENAME_OK: ")) {
-                    String newName = serverMessage.substring(11);
-                    appendSystemMessage("Вы успешно сменили ник на " + newName);
                     continue;
                 }
 
@@ -370,8 +362,17 @@ public class ChatClientFrame extends JFrame {
     }
 
     public static void main(String[] args) {
-        FlatDarkLaf.setup();
-        SwingUtilities.invokeLater(() -> new ChatClientFrame().setVisible(true));
+        FlatMacDarkLaf.setup();
+
+        SwingUtilities.invokeLater(() -> {
+            LoginFrame loginFrame = new LoginFrame((ip, port, nickname) -> {
+                SwingUtilities.invokeLater(() -> {
+                    ChatClientFrame chatFrame = new ChatClientFrame(ip, port, nickname);
+                    chatFrame.setVisible(true);
+                });
+            });
+            loginFrame.setVisible(true);
+        });
     }
 
     private static class RoundedPanel extends JPanel {

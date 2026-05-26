@@ -103,6 +103,11 @@ public class ClientHandler implements Runnable {
                     continue;
                 }
 
+                if  (lowerMessage.equals("/help")) {
+                    ChatServer.sendHelpMessage(out);
+                    continue;
+                }
+
                 if (message.startsWith("/")) {
                     out.println("[Система]: Неизвестная команда: " + message);
                     ChatServer.sendHelpMessage(out);

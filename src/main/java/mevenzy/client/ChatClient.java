@@ -72,7 +72,6 @@ public class ChatClient {
 
                         if (serverMessage.startsWith("RENAME_OK: ")) {
                             System.out.print("\r\u001B[K");
-                            System.out.println("Вы успешно поменяли свой ник.");
                             continue;
                         }
 
