@@ -8,6 +8,9 @@ target/
 ### Файл истории чата ###
 chat_history.txt
 
+### Файл старой версии Swing ###
+src/main/java/mevenzy/client/ChatClientSwing
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
