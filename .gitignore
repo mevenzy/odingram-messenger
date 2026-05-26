@@ -1,3 +1,4 @@
+.idea/
 out/
 target/
 !.mvn/wrapper/maven-wrapper.jar
@@ -9,7 +10,7 @@ target/
 chat_history.txt
 
 ### Файл старой версии Swing ###
-src/main/java/mevenzy/client/ChatClientSwing
+src/main/java/mevenzy/client/ChatClientSwing.java
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
