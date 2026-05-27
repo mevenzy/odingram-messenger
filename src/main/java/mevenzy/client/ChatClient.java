@@ -6,6 +6,8 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.Cursor;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
@@ -13,9 +15,12 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.text.Font;
+import javafx.scene.text.FontPosture;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -47,6 +52,17 @@ public class ChatClient extends Application {
 
     private Stage mainStage;
 
+    // Переменные для перетаскивания и изменения размера окна
+    private double xOffset = 0;
+    private double yOffset = 0;
+    private static final int RESIZE_MARGIN = 6;
+    private boolean isResizing = false;
+    private Cursor resizeCursor = Cursor.DEFAULT;
+
+    // Переменные для сохранения размеров перед разворачиванием окна
+    private double savedX, savedY, savedWidth, savedHeight;
+    private boolean isCustomMaximized = false;
+
     private final Color[] avatarColors = {
             Color.web("#E07070"), // Красный
             Color.web("#F2A84B"), // Оранжевый
@@ -59,21 +75,214 @@ public class ChatClient extends Application {
     @Override
     public void start(Stage primaryStage) {
         this.mainStage = primaryStage;
+        this.mainStage.initStyle(StageStyle.UNDECORATED);
         showLoginWindow();
     }
 
-    private void showLoginWindow() {
-        mainStage.setTitle("Odingram Login");
+    // Вспомогательный метод создания кастомного бара управления окном
+    private HBox createCustomTitleBar(String title, Stage stage, boolean allowMaximize) {
+        HBox titleBar = new HBox();
+        titleBar.setStyle("-fx-background-color: #18191A; -fx-padding: 5 12 5 12;");
+        titleBar.setAlignment(Pos.CENTER_LEFT);
 
+        Label windowTitle = new Label(title);
+        windowTitle.setFont(Font.font("Segoe UI", FontWeight.BOLD, 12));
+        windowTitle.setTextFill(Color.web("#72767D"));
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox buttonsBox = new HBox(12);
+        buttonsBox.setAlignment(Pos.CENTER_RIGHT);
+
+        String btnStyle = "-fx-background-color: transparent; -fx-text-fill: #72767D; -fx-cursor: hand; -fx-font-family: 'Segoe UI'; -fx-padding: 4 8 4 8;";
+
+        // Кнопка Свернуть
+        Button minBtn = new Button("—");
+        minBtn.setFont(Font.font("Segoe UI", 13));
+        minBtn.setStyle(btnStyle);
+        minBtn.setOnMouseEntered(e -> minBtn.setStyle(btnStyle + "-fx-text-fill: white;"));
+        minBtn.setOnMouseExited(e -> minBtn.setStyle(btnStyle));
+        minBtn.setOnAction(e -> stage.setIconified(true));
+        buttonsBox.getChildren().add(minBtn);
+
+        // Кнопка Развернуть / Восстановить
+        if (allowMaximize) {
+            // Используем крупный жирный символ "🗖" для "Развернуть"
+            Button maxBtn = new Button("🗖");
+            maxBtn.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14)); // Сделали чуть крупнее для идеального баланса
+            maxBtn.setStyle(btnStyle);
+            maxBtn.setOnMouseEntered(e -> maxBtn.setStyle(btnStyle + "-fx-text-fill: white;"));
+            maxBtn.setOnMouseExited(e -> maxBtn.setStyle(btnStyle));
+
+            maxBtn.setOnAction(e -> {
+                // Получаем размеры экрана за вычетом панели задач (Taskbar)
+                Screen screen = Screen.getScreensForRectangle(stage.getX(), stage.getY(), stage.getWidth(), stage.getHeight()).get(0);
+                Rectangle2D bounds = screen.getVisualBounds();
+
+                if (isCustomMaximized) {
+                    // Восстанавливаем прежний размер окна
+                    stage.setX(savedX);
+                    stage.setY(savedY);
+                    stage.setWidth(savedWidth);
+                    stage.setHeight(savedHeight);
+                    maxBtn.setText("🗖");
+                    maxBtn.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
+                    isCustomMaximized = false;
+                } else {
+                    // Сохраняем текущие размеры перед тем, как развернуть
+                    savedX = stage.getX();
+                    savedY = stage.getY();
+                    savedWidth = stage.getWidth();
+                    savedHeight = stage.getHeight();
+
+                    // Разворачиваем строго по границам видимой области (над панелью задач)
+                    stage.setX(bounds.getMinX());
+                    stage.setY(bounds.getMinY());
+                    stage.setWidth(bounds.getWidth());
+                    stage.setHeight(bounds.getHeight());
+
+                    maxBtn.setText("⧉");
+                    maxBtn.setFont(Font.font("Segoe UI", 13));
+                    isCustomMaximized = true;
+                }
+            });
+            buttonsBox.getChildren().add(maxBtn);
+
+            // Разворачивание по двойному клику
+            titleBar.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2) {
+                    maxBtn.fire();
+                }
+            });
+        }
+
+        // Кнопка Закрыть
+        Button closeBtn = new Button("✕");
+        closeBtn.setFont(Font.font("Segoe UI", 13));
+        closeBtn.setStyle(btnStyle);
+        closeBtn.setOnMouseEntered(e -> closeBtn.setStyle(btnStyle + "-fx-text-fill: #E07070;"));
+        closeBtn.setOnMouseExited(e -> closeBtn.setStyle(btnStyle));
+        closeBtn.setOnAction(e -> {
+            try {
+                if (socket != null && !socket.isClosed()) socket.close();
+            } catch (IOException ignored) {}
+            System.exit(0);
+        });
+
+        buttonsBox.getChildren().add(closeBtn);
+        titleBar.getChildren().addAll(windowTitle, spacer, buttonsBox);
+
+        // Перетаскивание (работает только если окно не развернуто)
+        titleBar.setOnMousePressed(event -> {
+            if (!isCustomMaximized) {
+                xOffset = event.getSceneX();
+                yOffset = event.getSceneY();
+            }
+        });
+        titleBar.setOnMouseDragged(event -> {
+            if (!isCustomMaximized && !isResizing) {
+                stage.setX(event.getScreenX() - xOffset);
+                stage.setY(event.getScreenY() - yOffset);
+            }
+        });
+
+        return titleBar;
+    }
+
+    // Изменение размера за края окна мышкой
+    private void enableWindowResize(Scene scene, Stage stage) {
+        scene.setOnMouseMoved(event -> {
+            if (isCustomMaximized) {
+                scene.setCursor(Cursor.DEFAULT);
+                return;
+            }
+
+            double x = event.getSceneX();
+            double y = event.getSceneY();
+            double width = scene.getWidth();
+            double height = scene.getHeight();
+
+            boolean borderRight = x >= width - RESIZE_MARGIN;
+            boolean borderBottom = y >= height - RESIZE_MARGIN;
+            boolean borderLeft = x <= RESIZE_MARGIN;
+            boolean borderTop = y <= RESIZE_MARGIN;
+
+            if (borderRight && borderBottom) {
+                resizeCursor = Cursor.SE_RESIZE;
+            } else if (borderLeft && borderBottom) {
+                resizeCursor = Cursor.SW_RESIZE;
+            } else if (borderRight && borderTop) {
+                resizeCursor = Cursor.NE_RESIZE;
+            } else if (borderLeft && borderTop) {
+                resizeCursor = Cursor.NW_RESIZE;
+            } else if (borderRight) {
+                resizeCursor = Cursor.E_RESIZE;
+            } else if (borderBottom) {
+                resizeCursor = Cursor.S_RESIZE;
+            } else if (borderLeft) {
+                resizeCursor = Cursor.W_RESIZE;
+            } else if (borderTop) {
+                resizeCursor = Cursor.N_RESIZE;
+            } else {
+                resizeCursor = Cursor.DEFAULT;
+            }
+            scene.setCursor(resizeCursor);
+        });
+
+        scene.setOnMousePressed(event -> {
+            if (resizeCursor != Cursor.DEFAULT) {
+                isResizing = true;
+                xOffset = stage.getWidth() - event.getX();
+                yOffset = stage.getHeight() - event.getY();
+            }
+        });
+
+        scene.setOnMouseDragged(event -> {
+            if (isResizing) {
+                double mouseX = event.getX();
+                double mouseY = event.getY();
+
+                if (resizeCursor == Cursor.E_RESIZE || resizeCursor == Cursor.SE_RESIZE || resizeCursor == Cursor.NE_RESIZE) {
+                    if (mouseX + xOffset >= stage.getMinWidth()) {
+                        stage.setWidth(mouseX + xOffset);
+                    }
+                }
+                if (resizeCursor == Cursor.S_RESIZE || resizeCursor == Cursor.SE_RESIZE || resizeCursor == Cursor.SW_RESIZE) {
+                    if (mouseY + yOffset >= stage.getMinHeight()) {
+                        stage.setHeight(mouseY + yOffset);
+                    }
+                }
+                if (resizeCursor == Cursor.W_RESIZE || resizeCursor == Cursor.SW_RESIZE || resizeCursor == Cursor.NW_RESIZE) {
+                    double newWidth = stage.getX() + stage.getWidth() - event.getScreenX();
+                    if (newWidth >= stage.getMinWidth()) {
+                        stage.setWidth(newWidth);
+                        stage.setX(event.getScreenX());
+                    }
+                }
+                if (resizeCursor == Cursor.N_RESIZE || resizeCursor == Cursor.NE_RESIZE || resizeCursor == Cursor.NW_RESIZE) {
+                    double newHeight = stage.getY() + stage.getHeight() - event.getScreenY();
+                    if (newHeight >= stage.getMinHeight()) {
+                        stage.setHeight(newHeight);
+                        stage.setY(event.getScreenY());
+                    }
+                }
+            }
+        });
+
+        scene.setOnMouseReleased(event -> isResizing = false);
+    }
+
+    private void showLoginWindow() {
         VBox loginRoot = new VBox(20);
         loginRoot.setAlignment(Pos.CENTER);
-        loginRoot.setPadding(new Insets(30, 40, 30, 40));
+        loginRoot.setPadding(new Insets(10, 40, 30, 40));
         loginRoot.setStyle("-fx-background-color: #18191A;");
 
         Label titleLabel = new Label("Odingram Messenger");
         titleLabel.setFont(Font.font("Segoe UI", FontWeight.BOLD, 28));
         titleLabel.setTextFill(Color.WHITE);
-        VBox.setMargin(titleLabel, new Insets(0, 0, 10, 0));
+        VBox.setMargin(titleLabel, new Insets(10, 0, 10, 0));
 
         String fieldStyle = "-fx-background-color: #242526; " +
                 "-fx-background-radius: 12; " +
@@ -84,7 +293,7 @@ public class ChatClient extends Application {
                 "-fx-pref-height: 42; " +
                 "-fx-font-size: 15;";
 
-        TextField ipField = new TextField("localhost");
+        TextField ipField = new TextField("127.0.0.1");
         ipField.setPromptText("IP сервера");
         ipField.setStyle(fieldStyle);
         ipField.setMaxWidth(280);
@@ -107,7 +316,12 @@ public class ChatClient extends Application {
 
         loginRoot.getChildren().addAll(titleLabel, ipField, portField, nickField, loginButton);
 
-        Scene loginScene = new Scene(loginRoot, 380, 420);
+        BorderPane container = new BorderPane();
+        HBox titleBar = createCustomTitleBar("Odingram Login", mainStage, false);
+        container.setTop(titleBar);
+        container.setCenter(loginRoot);
+
+        Scene loginScene = new Scene(container, 380, 440);
         mainStage.setScene(loginScene);
         mainStage.setResizable(false);
         mainStage.show();
@@ -169,8 +383,9 @@ public class ChatClient extends Application {
     }
 
     private void initMainChatUI() {
-        mainStage.setTitle("Odingram Messenger");
         mainStage.setResizable(true);
+        mainStage.setMinWidth(600);
+        mainStage.setMinHeight(500);
 
         BorderPane mainPanel = new BorderPane();
         mainPanel.setPadding(new Insets(10));
@@ -299,8 +514,15 @@ public class ChatClient extends Application {
             }
         });
 
-        Scene scene = new Scene(mainPanel, 750, 600);
+        BorderPane windowLayout = new BorderPane();
+        HBox chatTitleBar = createCustomTitleBar("Odingram Messenger", mainStage, true);
+        windowLayout.setTop(chatTitleBar);
+        windowLayout.setCenter(mainPanel);
+
+        Scene scene = new Scene(windowLayout, 750, 630);
         mainStage.setScene(scene);
+
+        enableWindowResize(scene, mainStage);
 
         chatMessagesPanel.heightProperty().addListener((observable, oldValue, newValue) ->
                 chatScrollPane.setVvalue(1.0)
@@ -310,7 +532,7 @@ public class ChatClient extends Application {
     private void setStatusDisconnected() {
         Platform.runLater(() -> {
             connectionStatusLabel.setText("● Соединение разорвано");
-            connectionStatusLabel.setTextFill(Color.web("#E07070")); // Красный
+            connectionStatusLabel.setTextFill(Color.web("#E07070"));
         });
     }
 
@@ -415,7 +637,7 @@ public class ChatClient extends Application {
 
             String timeStr = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
             Label timeLabel = new Label(timeStr);
-            timeLabel.setFont(Font.font("Segoe UI", javafx.scene.text.FontPosture.ITALIC, 10));
+            timeLabel.setFont(Font.font("Segoe UI", FontPosture.REGULAR, 10));
             timeLabel.setTextFill(isMe ? Color.web("#D2E6FF") : Color.web("#A0A0A0"));
 
             HBox timeContainer = new HBox(timeLabel);

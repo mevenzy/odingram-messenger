@@ -104,7 +104,6 @@ public class ChatServer {
 
     public static void sendHelpMessage(PrintWriter out) {
         out.println("[Система]: Список доступных команд:");
-        out.println("  /online                   - Показать пользователей в сети");
         out.println("  /rename новый_ник         - Изменить свой никнейм");
         out.println("  /private ник сообщение    - Отправить приватное сообщение");
         out.println("  /clear                    - Очистить историю чата");
