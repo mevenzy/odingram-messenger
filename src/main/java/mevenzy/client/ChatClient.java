@@ -18,11 +18,14 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontPosture;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -52,24 +55,23 @@ public class ChatClient extends Application {
 
     private Stage mainStage;
 
-    // Переменные для перетаскивания и изменения размера окна
     private double xOffset = 0;
     private double yOffset = 0;
     private static final int RESIZE_MARGIN = 6;
     private boolean isResizing = false;
     private Cursor resizeCursor = Cursor.DEFAULT;
 
-    // Переменные для сохранения размеров перед разворачиванием окна
     private double savedX, savedY, savedWidth, savedHeight;
     private boolean isCustomMaximized = false;
+    private volatile boolean isReconnecting = false;
 
     private final Color[] avatarColors = {
-            Color.web("#E07070"), // Красный
-            Color.web("#F2A84B"), // Оранжевый
-            Color.web("#54B4D3"), // Голубой
-            Color.web("#6EC574"), // Зеленый
-            Color.web("#9985DA"), // Фиолетовый
-            Color.web("#E473AB")  // Розовый
+            Color.web("#E07070"),
+            Color.web("#F2A84B"),
+            Color.web("#54B4D3"),
+            Color.web("#6EC574"),
+            Color.web("#9985DA"),
+            Color.web("#E473AB")
     };
 
     @Override
@@ -79,7 +81,6 @@ public class ChatClient extends Application {
         showLoginWindow();
     }
 
-    // Вспомогательный метод создания кастомного бара управления окном
     private HBox createCustomTitleBar(String title, Stage stage, boolean allowMaximize) {
         HBox titleBar = new HBox();
         titleBar.setStyle("-fx-background-color: #18191A; -fx-padding: 5 12 5 12;");
@@ -97,7 +98,6 @@ public class ChatClient extends Application {
 
         String btnStyle = "-fx-background-color: transparent; -fx-text-fill: #72767D; -fx-cursor: hand; -fx-font-family: 'Segoe UI'; -fx-padding: 4 8 4 8;";
 
-        // Кнопка Свернуть
         Button minBtn = new Button("—");
         minBtn.setFont(Font.font("Segoe UI", 13));
         minBtn.setStyle(btnStyle);
@@ -106,22 +106,18 @@ public class ChatClient extends Application {
         minBtn.setOnAction(e -> stage.setIconified(true));
         buttonsBox.getChildren().add(minBtn);
 
-        // Кнопка Развернуть / Восстановить
         if (allowMaximize) {
-            // Используем крупный жирный символ "🗖" для "Развернуть"
             Button maxBtn = new Button("🗖");
-            maxBtn.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14)); // Сделали чуть крупнее для идеального баланса
+            maxBtn.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
             maxBtn.setStyle(btnStyle);
             maxBtn.setOnMouseEntered(e -> maxBtn.setStyle(btnStyle + "-fx-text-fill: white;"));
             maxBtn.setOnMouseExited(e -> maxBtn.setStyle(btnStyle));
 
             maxBtn.setOnAction(e -> {
-                // Получаем размеры экрана за вычетом панели задач (Taskbar)
                 Screen screen = Screen.getScreensForRectangle(stage.getX(), stage.getY(), stage.getWidth(), stage.getHeight()).get(0);
                 Rectangle2D bounds = screen.getVisualBounds();
 
                 if (isCustomMaximized) {
-                    // Восстанавливаем прежний размер окна
                     stage.setX(savedX);
                     stage.setY(savedY);
                     stage.setWidth(savedWidth);
@@ -130,13 +126,11 @@ public class ChatClient extends Application {
                     maxBtn.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
                     isCustomMaximized = false;
                 } else {
-                    // Сохраняем текущие размеры перед тем, как развернуть
                     savedX = stage.getX();
                     savedY = stage.getY();
                     savedWidth = stage.getWidth();
                     savedHeight = stage.getHeight();
 
-                    // Разворачиваем строго по границам видимой области (над панелью задач)
                     stage.setX(bounds.getMinX());
                     stage.setY(bounds.getMinY());
                     stage.setWidth(bounds.getWidth());
@@ -149,7 +143,6 @@ public class ChatClient extends Application {
             });
             buttonsBox.getChildren().add(maxBtn);
 
-            // Разворачивание по двойному клику
             titleBar.setOnMouseClicked(event -> {
                 if (event.getClickCount() == 2) {
                     maxBtn.fire();
@@ -157,7 +150,6 @@ public class ChatClient extends Application {
             });
         }
 
-        // Кнопка Закрыть
         Button closeBtn = new Button("✕");
         closeBtn.setFont(Font.font("Segoe UI", 13));
         closeBtn.setStyle(btnStyle);
@@ -173,7 +165,6 @@ public class ChatClient extends Application {
         buttonsBox.getChildren().add(closeBtn);
         titleBar.getChildren().addAll(windowTitle, spacer, buttonsBox);
 
-        // Перетаскивание (работает только если окно не развернуто)
         titleBar.setOnMousePressed(event -> {
             if (!isCustomMaximized) {
                 xOffset = event.getSceneX();
@@ -190,7 +181,6 @@ public class ChatClient extends Application {
         return titleBar;
     }
 
-    // Изменение размера за края окна мышкой
     private void enableWindowResize(Scene scene, Stage stage) {
         scene.setOnMouseMoved(event -> {
             if (isCustomMaximized) {
@@ -293,7 +283,7 @@ public class ChatClient extends Application {
                 "-fx-pref-height: 42; " +
                 "-fx-font-size: 15;";
 
-        TextField ipField = new TextField("127.0.0.1");
+        TextField ipField = new TextField("127.0.0.7");
         ipField.setPromptText("IP сервера");
         ipField.setStyle(fieldStyle);
         ipField.setMaxWidth(280);
@@ -311,7 +301,14 @@ public class ChatClient extends Application {
         Button loginButton = new Button("Подключиться");
         loginButton.setFont(Font.font("Segoe UI", FontWeight.BOLD, 15));
         loginButton.setTextFill(Color.WHITE);
-        loginButton.setStyle("-fx-background-color: linear-gradient(to right, #7543F4, #1E90FF); -fx-background-radius: 15; -fx-pref-height: 40; -fx-pref-width: 160;");
+        loginButton.setCursor(Cursor.HAND);
+
+        String loginBtnBaseStyle = "-fx-background-color: linear-gradient(to right, #2B72E3, #3BB1E3); -fx-background-radius: 15; -fx-pref-height: 40; -fx-pref-width: 160;";
+        String loginBtnHoverStyle = "-fx-background-color: linear-gradient(to right, #4688F1, #5CC5F1); -fx-background-radius: 15; -fx-pref-height: 40; -fx-pref-width: 160;";
+        loginButton.setStyle(loginBtnBaseStyle);
+        loginButton.setOnMouseEntered(e -> loginButton.setStyle(loginBtnHoverStyle));
+        loginButton.setOnMouseExited(e -> loginButton.setStyle(loginBtnBaseStyle));
+
         VBox.setMargin(loginButton, new Insets(10, 0, 0, 0));
 
         loginRoot.getChildren().addAll(titleLabel, ipField, portField, nickField, loginButton);
@@ -370,6 +367,7 @@ public class ChatClient extends Application {
                 this.serverPort = port;
 
                 initMainChatUI();
+                loadChatHistory();
 
                 new Thread(this::listenToServer).start();
                 new Thread(this::startOnlineUsersUpdater).start();
@@ -384,8 +382,8 @@ public class ChatClient extends Application {
 
     private void initMainChatUI() {
         mainStage.setResizable(true);
-        mainStage.setMinWidth(600);
-        mainStage.setMinHeight(500);
+        mainStage.setMinWidth(800);
+        mainStage.setMinHeight(700);
 
         BorderPane mainPanel = new BorderPane();
         mainPanel.setPadding(new Insets(10));
@@ -400,8 +398,14 @@ public class ChatClient extends Application {
 
         toggleUsersButton = new Button("👥 Скрыть пользователей");
         toggleUsersButton.setFont(Font.font("Segoe UI", 12));
-        toggleUsersButton.setStyle("-fx-background-color: linear-gradient(to right, #7543F4, #1E90FF); -fx-background-radius: 15; -fx-padding: 8");
         toggleUsersButton.setTextFill(Color.WHITE);
+        toggleUsersButton.setCursor(Cursor.HAND);
+
+        String toggleBtnBase = "-fx-background-color: linear-gradient(to right, #2B72E3, #3BB1E3); -fx-background-radius: 15; -fx-padding: 8;";
+        String toggleBtnHover = "-fx-background-color: linear-gradient(to right, #4688F1, #5CC5F1); -fx-background-radius: 15; -fx-padding: 8;";
+        toggleUsersButton.setStyle(toggleBtnBase);
+        toggleUsersButton.setOnMouseEntered(e -> toggleUsersButton.setStyle(toggleBtnHover));
+        toggleUsersButton.setOnMouseExited(e -> toggleUsersButton.setStyle(toggleBtnBase));
 
         topPanel.setLeft(connectionStatusLabel);
         BorderPane.setAlignment(connectionStatusLabel, Pos.CENTER_LEFT);
@@ -489,8 +493,14 @@ public class ChatClient extends Application {
         sendButton = new Button("Отправить");
         sendButton.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
         sendButton.setTextFill(Color.WHITE);
-        sendButton.setStyle("-fx-background-color: linear-gradient(to right, #7543F4, #1E90FF); -fx-background-radius: 15; -fx-padding: 12;");
         sendButton.setPrefHeight(30);
+        sendButton.setCursor(Cursor.HAND);
+
+        String sendBtnBase = "-fx-background-color: linear-gradient(to right, #2B72E3, #3BB1E3); -fx-background-radius: 15; -fx-padding: 12;";
+        String sendBtnHover = "-fx-background-color: linear-gradient(to right, #4688F1, #5CC5F1); -fx-background-radius: 15; -fx-padding: 12;";
+        sendButton.setStyle(sendBtnBase);
+        sendButton.setOnMouseEntered(e -> sendButton.setStyle(sendBtnHover));
+        sendButton.setOnMouseExited(e -> sendButton.setStyle(sendBtnBase));
 
         inputPanel.getChildren().addAll(messageField, sendButton);
         mainPanel.setBottom(inputPanel);
@@ -529,11 +539,53 @@ public class ChatClient extends Application {
         );
     }
 
+    private void loadChatHistory() {
+        File file = new File("chat_history.txt");
+        if (!file.exists()) return;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.trim().isEmpty()) {
+                    parseAndAppendMessage(line);
+                }
+            }
+        } catch (IOException ignored) {}
+    }
+
     private void setStatusDisconnected() {
         Platform.runLater(() -> {
-            connectionStatusLabel.setText("● Соединение разорвано");
+            connectionStatusLabel.setText("● Подключение потеряно. Попытка восстановить связь...");
             connectionStatusLabel.setTextFill(Color.web("#E07070"));
+            messageField.setDisable(true);
+            sendButton.setDisable(true);
         });
+    }
+
+    private void setStatusConnected() {
+        Platform.runLater(() -> {
+            connectionStatusLabel.setText("● Подключено");
+            connectionStatusLabel.setTextFill(Color.web("#6EC574"));
+            messageField.setDisable(false);
+            sendButton.setDisable(false);
+        });
+    }
+
+    private boolean connectToServer() {
+        try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+            socket = new Socket(serverAddress, serverPort);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+
+            out.println(nickname);
+            String response = in.readLine();
+            return response != null && response.equals("OK");
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private void listenToServer() {
@@ -541,13 +593,13 @@ public class ChatClient extends Application {
             String serverMessage;
             while ((serverMessage = in.readLine()) != null) {
                 if (serverMessage.startsWith("RENAME_OK: ")) {
-                    String newName = serverMessage.substring(11);
-                    appendSystemMessage("Вы успешно сменили ник на " + newName);
+                    String newName = serverMessage.substring(11).trim();
+                    this.nickname = newName;
                     continue;
                 }
 
                 if (serverMessage.startsWith("[Система]: Сейчас в сети: ")) {
-                    String namesRaw = serverMessage.substring(25);
+                    String namesRaw = serverMessage.substring(25).trim();
                     updateOnlineListUI(namesRaw);
                     continue;
                 }
@@ -555,16 +607,39 @@ public class ChatClient extends Application {
                 parseAndAppendMessage(serverMessage);
             }
         } catch (IOException e) {
-            setStatusDisconnected();
-            messageField.setDisable(true);
-            sendButton.setDisable(true);
+            handleConnectionLoss();
         }
+    }
+
+    private void handleConnectionLoss() {
+        setStatusDisconnected();
+        if (isReconnecting) return;
+        isReconnecting = true;
+
+        new Thread(() -> {
+            while (isReconnecting) {
+                try {
+                    Thread.sleep(3000);
+                    if (connectToServer()) {
+                        isReconnecting = false;
+                        setStatusConnected();
+                        new Thread(this::listenToServer).start();
+                        appendSystemMessage("Соединение с сервером восстановлено!");
+                        break;
+                    }
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }).start();
     }
 
     private void startOnlineUsersUpdater() {
         try {
-            while (socket != null && !socket.isClosed()) {
-                out.println("/online");
+            while (socket != null) {
+                if (!socket.isClosed() && !isReconnecting) {
+                    out.println("/online");
+                }
                 Thread.sleep(4000);
             }
         } catch (InterruptedException ignored) {
@@ -593,52 +668,70 @@ public class ChatClient extends Application {
             return;
         }
 
-        boolean isMe = rawMessage.startsWith("[Вы]:");
+        boolean isMe = false;
         String senderName = "";
         String textContent = "";
+
+        if (rawMessage.startsWith("[Вы]:") || rawMessage.startsWith("[Лично для ")) {
+            isMe = true;
+        }
 
         if (rawMessage.contains("]: ")) {
             int splitIdx = rawMessage.indexOf("]: ");
             senderName = rawMessage.substring(1, splitIdx);
             textContent = rawMessage.substring(splitIdx + 3);
+
+            if (senderName.equalsIgnoreCase(nickname)) {
+                isMe = true;
+            }
         } else {
             textContent = rawMessage;
         }
 
+        final boolean finalIsMe = isMe;
         final String finalSender = senderName;
         final String finalBoxText = textContent;
 
         Platform.runLater(() -> {
             HBox rowPanel = new HBox();
-            rowPanel.setAlignment(isMe ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+            rowPanel.setAlignment(finalIsMe ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
             rowPanel.setPadding(new Insets(2, 0, 2, 0));
 
             VBox bubble = new VBox(3);
             bubble.setPadding(new Insets(8, 14, 6, 14));
             bubble.setMaxWidth(400);
 
-            String style = isMe
-                    ? "-fx-background-color: linear-gradient(to right, #7543F4, #1E90FF); -fx-background-radius: 16 16 0 16;"
-                    : "-fx-background-color: #3A3B3C; -fx-background-radius: 16 16 16 0;";
+            String style = finalIsMe
+                    ? "-fx-background-color: linear-gradient(to right, #2B72E3, #3BB1E3); -fx-background-radius: 16 16 0 16;"
+                    : "-fx-background-color: #2B303C; -fx-background-radius: 16 16 16 0;";
             bubble.setStyle(style);
 
-            if (!isMe) {
+            if (!finalSender.isEmpty()) {
                 Label nameLabel = new Label(finalSender);
                 nameLabel.setFont(Font.font("Segoe UI", FontWeight.BOLD, 11));
-                nameLabel.setTextFill(Color.web("#AAAFB4"));
+
+                if (finalIsMe) {
+                    nameLabel.setTextFill(Color.web("#D2E6FF"));
+                } else {
+                    nameLabel.setTextFill(Color.web("#80A6E3"));
+                }
                 bubble.getChildren().add(nameLabel);
             }
 
-            Label messageLabel = new Label(finalBoxText);
-            messageLabel.setFont(Font.font("Segoe UI", 14));
-            messageLabel.setTextFill(Color.WHITE);
-            messageLabel.setWrapText(true);
-            bubble.getChildren().add(messageLabel);
+            Text textNode = new Text(finalBoxText);
+            textNode.setFont(Font.font("Segoe UI", 14));
+            textNode.setFill(Color.WHITE);
+
+            TextFlow textFlow = new TextFlow(textNode);
+            textFlow.setMaxWidth(360);
+            textFlow.setPrefWidth(Region.USE_COMPUTED_SIZE);
+
+            bubble.getChildren().add(textFlow);
 
             String timeStr = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
             Label timeLabel = new Label(timeStr);
             timeLabel.setFont(Font.font("Segoe UI", FontPosture.REGULAR, 10));
-            timeLabel.setTextFill(isMe ? Color.web("#D2E6FF") : Color.web("#A0A0A0"));
+            timeLabel.setTextFill(finalIsMe ? Color.web("#E2F1FF") : Color.web("#8E95A5"));
 
             HBox timeContainer = new HBox(timeLabel);
             timeContainer.setAlignment(Pos.CENTER_RIGHT);
@@ -666,6 +759,7 @@ public class ChatClient extends Application {
     }
 
     private void sendMessage() {
+        if (isReconnecting) return;
         String text = messageField.getText().trim();
         if (!text.isEmpty()) {
             out.println(text);
